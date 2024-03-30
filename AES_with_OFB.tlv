@@ -58,7 +58,7 @@
                }
             },
             render() {
-               this.getObjects().round.set({text: `Round: ${'$r_counter'.asInt()}`, fill: "white"}).animate({fill: "white"}, {
+               this.getObjects().round.set({text: `Round: ${'$round'.asInt()}`, fill: "white"}).animate({fill: "white"}, {
                     // This triggers animation rendering for 1/2 sec for all VIZ. (It animates from "white" to "white".)
                     onChange: this.global.canvas.renderAll.bind(this.global.canvas),
                     duration: 600
@@ -550,7 +550,7 @@
                      },
                      render() {
                         this.getObjects().text.set({
-                           text: `${'$oo'.asHexStr()}\n${'$key_byte'.asHexStr()}\n${'$state_ark_byte'.asHexStr()}`,
+                           text: `${'|encrypt$state_mc'.asHexStr().substr((15 - (this.getIndex("sbox_k") * 4 + this.getIndex("yy"))) * 2, 2)}\n${'$key_byte'.asHexStr()}\n${'$state_ark_byte'.asHexStr()}`,
                            fill: '|encrypt$valid_blk'.asBool() ? "black" : "lightgray"
                         })
                         return [];
@@ -567,11 +567,11 @@
                               {left: 0, top: 0, width: 100, height: 100, fill: "#FFF1", strokeWidth: 0,},
                               {strokeWidth: 0}
                         ),
-                        term2: new fabric.Text("Key\n($key)", {
+                        key: new fabric.Text("Key\n($key)", {
                               left: 19.5, top: 12.5, angle: -90, fill: "white", textAlign: "center", originX: "center",
                               fontFamily: "roboto mono", fontSize: 3
                         }),
-                        next_word: new fabric.Text("State Out\n($state_ark)", {
+                        next_key: new fabric.Text("Next Key\n($next_key)", {
                               left: 19.5, top: 56.4, angle: -90, fill: "white", textAlign: "center", originX: "center",
                               fontFamily: "roboto mono", fontSize: 3
                         }),
@@ -610,6 +610,10 @@
                         return ret
                      }
                      let obj = this.getObjects()
+                     
+                     let computed = '/keyschedule>>1$compute_next_key'.asBool()
+                     obj.key.set({text: computed ? "Key\n($key)" : "Start Key\n($key)"})
+                     
                      obj.img.        set({top: 0})  // Reset animation in case we're mid-animation.
                      obj.rot.        set({visible: false, text: '/keyschedule$rot'.        asHexStr()})
                      obj.sb_out_word.set({visible: false, text: '/keyschedule$sb_out_word'.asHexStr()})
@@ -617,7 +621,6 @@
                                                 '/keyschedule$rcon'.       asHexStr()})
                      obj.xor_con. set({visible: false, text: '/keyschedule$xor_con'.       asHexStr()})
                      
-                     let computed_key = '/keyschedule>>1$compute_next_key'.asBool()
                      // Animate. Some elements are not visible, animate others upward. Then unhide all.
                      this.render_cnt++  // to support abort
                      let render_cnt = this.render_cnt  // to support abort
@@ -697,14 +700,20 @@
                                       }
                                  })
                               } else {
-                                 let visible = '/keyschedule$compute_next_key'.asBool()
+                                 let compute = '/keyschedule$compute_next_key'.asBool()
                                  obj.text.set({visible: false}).animate({top: 5}, {
-                                     duration,
-                                     onComplete: function () {obj.text.set({visible})}
+                                      duration,
+                                      onComplete: function () {obj.text.set({visible: true, fill: compute ? "black" : "lightgray"})},
+                                      abort: () => {
+                                         render_cnt != this.render_cnt
+                                      }
                                  })
                                  obj.circ.set({visible: false}).animate({top: 0}, {
-                                     duration,
-                                     onComplete: function () {obj.circ.set({visible})}
+                                      duration,
+                                      onComplete: function () {obj.circ.set({visible: true})},
+                                      abort: () => {
+                                         render_cnt != this.render_cnt
+                                      }
                                  })
                               }
                               // Animate.
@@ -856,7 +865,7 @@
 //Module to perform the key schedule, or key expansion, subroutine. 
 //See Section 5.2(page 19) of the NIST AES Specification for more details.
 //https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197.pdf
-\TLV keyschedule(/_top, /_name, $_start_key, $_run_key, $_reset, $_r_counter, $_ld_key)
+\TLV keyschedule(/_top, /_name, $_start_key, $_finished, $_reset, $_round, $_ld_key)
    /_name
       
       //KEY is the exposed output to main. The current key to use will be displayed.
@@ -865,18 +874,14 @@
       $key[127:0] = /_top$_reset ?  '0 : //resets key (loads dummy for testing)
                     /_top$_ld_key ? /_top$_start_key :  //pulls in initial key
                     >>1$next_key; //loads next key
-                    
-      $next_key[127:0] = /_top$_ld_key ? /_top$_start_key : //full key for next clock
-                         /_top$_run_key ? {/word[3]$next_word, /word[2]$next_word, /word[1]$next_word, /word[0]$next_word} :
-                         >>1$next_key;
-      $compute_next_key = /_top$_run_key && ! /_top$_ld_key;
+      $compute_next_key = ! /_top$_finished && (/_top$_round < 10);
       ?$compute_next_key
          $rot[31:0] = {$key[103:96], $key[127:104]}; // rotate word
          
          m5+sbox(/_name, /sbox_k, $rot)
          
          $sb_out_word[31:0] = {/sbox_k[3]$sb_out, /sbox_k[2]$sb_out, /sbox_k[1]$sb_out, /sbox_k[0]$sb_out};
-         $rcon[7:0] = /_top$_r_counter == 0 ? 8'h01 : //round constant
+         $rcon[7:0] = /_top$_round == 0 ? 8'h01 : //round constant
                       >>1$rcon <  8'h80 ? (2 * >>1$rcon) :
                                  ((2 * >>1$rcon) ^ 8'h1B);
          $xor_con[31:0] = $sb_out_word[31:0] ^ {24'b0, $rcon}; // xor with the round constant
@@ -886,7 +891,9 @@
             $term2[31:0] = /_name$key[#word * 32 + 31 : #word * 32];
             $next_word[31:0] = $term1 ^
                                $term2;
-            
+         $next_key[127:0] = /_top$_ld_key ? /_top$_start_key : //full key for next clock
+                            {/word[3]$next_word, /word[2]$next_word, /word[1]$next_word, /word[0]$next_word};
+         
 \TLV calc()
    |encrypt
       @0
@@ -928,46 +935,45 @@
          $valid_blk = ($ofb && ($blk_counter <= $blocks_to_run)) || !$ofb;
          //Counter to count the number of AES blocks performed
          $blk_counter[22:0] = !$reset && >>1$reset ? 0 :
-                              !$ld_key && >>1$ld_key ? >>1$blk_counter+1 :
+                              !$ld_key && >>1$ld_key && $valid_blk ? >>1$blk_counter + 1 :
                               >>1$blk_counter;
          
          //Reset if *reset or if the ofb_count reaches 12 when in OFB
          $reset = *reset;
          $valid_check = $valid && !$ofb;
-         $valid = $r_counter==11;
-         $not_round0 = $valid_blk && $r_counter != 0;
-         $do_mixcolumn = $valid_blk && $r_counter != 0 && $r_counter != 10;
+         $valid = >>1$round == 10;
+         $not_round0 = $valid_blk && $round != 0;
+         $do_mixcolumn = $valid_blk && $round != 0 && $round < 10;
          ?$valid_blk
             
             //If in ECB, this checks to see if the AES block if completed
             
-            $ld_key = ((!$reset && >>1$reset) || >>1$r_counter == 10) ? 1 : 0;
-            
-            $run_key = (!$ld_key && >>1$ld_key) ? 1 :
-                       (>>1$run_key && $ofb && >>1$blk_counter <= $blocks_to_run ) ? 1 :
-                       (!$ofb && >>1$r_counter < 11) ? 1 :
-                       0;
+            $ld_key = ((!$reset && >>1$reset) || >>1$last_round) ? 1 : 0;
             
             $ld_init = !$reset && >>1$reset ? 1 : 0;
             //round counter
-            $r_counter[4:0] = $reset ? 0 :
-                              !$ld_key && >>1$ld_key ? 0 :
-                              ($ofb && >>1$r_counter > 10) ? 0 :
-                              $run_key ? >>1$r_counter+1 :
-                              >>1$r_counter;
+            $round[4:0] = $reset ? 0 :
+                          >>1$round >= 10 ? 0 :
+                          >>1$valid_blk ? >>1$round + 1 :
+                          0;
+            $last_round = $round == 10;
+            $finishing = $ofb && $last_round && $blk_counter >= $blocks_to_run;
+            $finished = $reset ? 0 :
+                        >>1$finishing ? 1 :
+                        >>1$finished;
             
             //Perform the key schedule subroutine
-            m5+keyschedule(|encrypt, /keyschedule, $start_key, $run_key, $reset, $r_counter, $ld_key)
+            m5+keyschedule(|encrypt, /keyschedule, $start_key, $finished, $reset, $round, $ld_key)
             //set the initial state
             $state_i[127:0] = $reset ? '0:
                               !$ld_init && >>1$ld_init ? $test_state :
-                              ($run_key && >>1$r_counter<11) ? >>1$state_ark :
+                              >>1$valid_blk ? >>1$state_ark :
                               >>1$state_i;
                               
             //Perform the subbytes and shift row subroutines
             ?$not_round0
                m5+subbytes(|encrypt, /subbytes, $state_i)
-            $state_ssr[127:0] = $r_counter == 0 ? $state_i : /subbytes$ssr_out;
+            $state_ssr[127:0] = $round == 0 ? $state_i : /subbytes$ssr_out;
             
             //Perform the mixcolumn subroutine
             ?$do_mixcolumn
@@ -1011,7 +1017,7 @@ module top(input logic clk, input logic reset, input logic [31:0] cyc_cnt, outpu
    m5_if_neq(m5_target, FPGA, ['logic [7:0]uio_in,  uio_out, uio_oe;'])
    logic [31:0] r;
    always @(posedge clk) r <= m5_if(m5_MAKERCHIP, ['$urandom()'], ['0']);
-   assign ui_in = 8'b00000001;
+   assign ui_in = 8'b10000001;
    m5_if_neq(m5_target, FPGA, ['assign uio_in = 8'b0;'])
    logic ena = 1'b0;
    logic rst_n = ! reset;
