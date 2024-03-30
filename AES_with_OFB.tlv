@@ -891,8 +891,7 @@
             $term2[31:0] = /_name$key[#word * 32 + 31 : #word * 32];
             $next_word[31:0] = $term1 ^
                                $term2;
-         $next_key[127:0] = /_top$_ld_key ? /_top$_start_key : //full key for next clock
-                            {/word[3]$next_word, /word[2]$next_word, /word[1]$next_word, /word[0]$next_word};
+         $next_key[127:0] = {/word[3]$next_word, /word[2]$next_word, /word[1]$next_word, /word[0]$next_word};
          
 \TLV calc()
    |encrypt
@@ -952,7 +951,7 @@
             
             $ld_init = !$reset && >>1$reset ? 1 : 0;
             //round counter
-            $round[4:0] = $reset ? 0 :
+            $round[4:0] = >>1$reset ? 0 :
                           >>1$round >= 10 ? 0 :
                           >>1$valid_blk ? >>1$round + 1 :
                           0;
@@ -966,7 +965,7 @@
             m5+keyschedule(|encrypt, /keyschedule, $start_key, $finished, $reset, $round, $ld_key)
             //set the initial state
             $state_i[127:0] = $reset ? '0:
-                              !$ld_init && >>1$ld_init ? $test_state :
+                              $ld_init ? $test_state :
                               >>1$valid_blk ? >>1$state_ark :
                               >>1$state_i;
                               
@@ -1017,7 +1016,7 @@ module top(input logic clk, input logic reset, input logic [31:0] cyc_cnt, outpu
    m5_if_neq(m5_target, FPGA, ['logic [7:0]uio_in,  uio_out, uio_oe;'])
    logic [31:0] r;
    always @(posedge clk) r <= m5_if(m5_MAKERCHIP, ['$urandom()'], ['0']);
-   assign ui_in = 8'b10000001;
+   assign ui_in = 8'b00000001;
    m5_if_neq(m5_target, FPGA, ['assign uio_in = 8'b0;'])
    logic ena = 1'b0;
    logic rst_n = ! reset;
